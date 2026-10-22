@@ -1,0 +1,159 @@
+<!-- language: HTML, file: public/index.html, runtime: Browser, deps: Material 3 CDN -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Resora 2 · Agnes AI</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <style>
+        :root {
+            --md-primary: #6750A4;
+            --md-on-primary: #FFFFFF;
+            --md-surface: #FEF7FF;
+            --md-on-surface: #1D1B20;
+            --md-surface-variant: #E7E0EC;
+            --md-outline: #79747E;
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: var(--md-surface);
+            color: var(--md-on-surface);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            padding: 24px;
+        }
+        .app { width: 100%; max-width: 800px; }
+        .card {
+            background: var(--md-surface-variant);
+            border-radius: 28px;
+            padding: 24px;
+        }
+        .title {
+            font-size: 24px; font-weight: 500; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .field { margin-bottom: 16px; }
+        .field label {
+            display: block; font-size: 12px; color: var(--md-outline); margin-bottom: 4px;
+        }
+        input[type="text"], select {
+            width: 100%; padding: 16px; border: 1px solid var(--md-outline);
+            border-radius: 12px; background: transparent; font-size: 16px; box-sizing: border-box;
+        }
+        button {
+            background: var(--md-primary); color: var(--md-on-primary);
+            border: none; padding: 16px 24px; border-radius: 100px;
+            font-size: 16px; font-weight: 500; cursor: pointer; width: 100%;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .video-container {
+            margin-top: 16px; border-radius: 16px; overflow: hidden;
+            background: #000; aspect-ratio: 16 / 9;
+            display: flex; align-items: center; justify-content: center;
+        }
+        video { width: 100%; height: 100%; object-fit: contain; }
+        .status {
+            margin-top: 8px; font-size: 14px; color: var(--md-outline); text-align: center;
+        }
+        .spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="card">
+            <div class="title">
+                <span class="material-symbols-outlined">movie</span>
+                Resora 2 · Agnes AI
+            </div>
+
+            <div class="field">
+                <label>Промпт</label>
+                <input type="text" id="prompt" placeholder="Опиши видео..." value="A cat dancing in the rain, cinematic lighting, 4k">
+            </div>
+
+            <div class="field">
+                <label>Длительность</label>
+                <select id="duration">
+                    <option value="5">5 секунд</option>
+                    <option value="8">8 секунд</option>
+                    <option value="10">10 секунд</option>
+                </select>
+            </div>
+
+            <button id="generateBtn">
+                <span class="material-symbols-outlined">play_arrow</span>
+                Сгенерировать
+            </button>
+
+            <div class="status" id="status">Готов к работе</div>
+
+            <div class="video-container" id="videoContainer">
+                <span class="material-symbols-outlined" style="font-size: 64px; color: #555;">videocam_off</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const btn = document.getElementById('generateBtn');
+        const promptInput = document.getElementById('prompt');
+        const durationSelect = document.getElementById('duration');
+        const statusEl = document.getElementById('status');
+        const videoContainer = document.getElementById('videoContainer');
+        let polling = null;
+
+        async function generate() {
+            const prompt = promptInput.value;
+            const duration = durationSelect.value;
+            if (!prompt) return alert('Введи промпт');
+
+            btn.disabled = true;
+            statusEl.textContent = 'Создаю задачу...';
+            videoContainer.innerHTML = '<span class="material-symbols-outlined spinner" style="font-size: 48px; color: #aaa;">progress_activity</span>';
+
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, duration })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+
+                statusEl.textContent = 'Генерация... (может занять до 2 минут)';
+                polling = setInterval(() => checkStatus(data.video_id), 3000);
+
+            } catch (e) {
+                statusEl.textContent = 'Ошибка: ' + e.message;
+                btn.disabled = false;
+            }
+        }
+
+        async function checkStatus(videoId) {
+            try {
+                const res = await fetch(`/api/status/${videoId}`);
+                const data = await res.json();
+
+                if (data.status === 'completed') {
+                    clearInterval(polling);
+                    statusEl.textContent = 'Готово!';
+                    videoContainer.innerHTML = `<video src="${data.videoUrl}" controls autoplay loop></video>`;
+                    btn.disabled = false;
+                } else if (data.status === 'failed') {
+                    clearInterval(polling);
+                    statusEl.textContent = 'Ошибка генерации';
+                    btn.disabled = false;
+                } else {
+                    statusEl.textContent = `Генерация... ${data.progress || 0}%`;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        btn.addEventListener('click', generate);
+    </script>
+</body>
+</html>
